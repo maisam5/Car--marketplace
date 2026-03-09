@@ -160,7 +160,7 @@ export async function cancelTestDrive(bookingId) {
       data: { status: "CANCELLED" },
     });
 
-    revalidatePath("/reservations");
+    revalidatePath("/bookings");
     revalidatePath("/admin/test-drives");
 
     return { success: true, message: "Test drive cancelled" };

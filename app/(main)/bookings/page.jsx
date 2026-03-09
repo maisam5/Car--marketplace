@@ -1,6 +1,7 @@
 import { auth } from '@clerk/nextjs/server';
 import React from 'react'
 import BookingListPage from './_components/booking-list';
+import { getUserTestDrives } from '@/actions/test-drive';
 
 
 export const metadata = {
@@ -12,7 +13,7 @@ const BookingsPage = async () => {
     const { userId } = await auth();
 
   if (!userId) {
-    redirect("/sign-in?redirect=/reservations");
+    redirect("/sign-in?redirect=/bookings");
   }
 
   const reservationsResult = await getUserTestDrives();

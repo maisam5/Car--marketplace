@@ -215,51 +215,57 @@ try {
 export async function deleteCar(id){
   try {
     const {userId} = await auth();
-  if(!useId) throw new Error("Unathorized")
+    if(!userId) throw new Error("Unauthorized");
+    
     const user = await prisma.user.findUnique({
-  where:{clerkUserId:userId},
+      where:{clerkUserId:userId},
     });
-    if(!user) throw new Error("user not found");
-    // fetch car to get imgs
+    if(!user) throw new Error("User not found");
+    
+    // ✅ Admin check add kiya
+    if(user.role !== "ADMIN") throw new Error("Unauthorized - Admins only");
+
     const car = await prisma.car.findUnique({
       where:{id},
-      select:{image:true},
+      select:{images:true},
     });
     if(!car) return{
       success:false,
-      error:"car not found",
+      error:"Car not found",
     };
+
     await prisma.car.delete({
       where:{id},
     });
+
+    // ✅ Supabase images delete
     try {
       const cookieStore = await cookies();
       const supabase = createClient(cookieStore);
 
       const filePaths = car.images.map((imageUrl)=>{
         const url = new URL(imageUrl);
-        const pathMatch =url.pathname.match(/\/car-images\/(.*)/);
+        const pathMatch = url.pathname.match(/\/car-images\/(.*)/);
         return pathMatch ? pathMatch[1] : null;
-
       }).filter(Boolean);
+
       if(filePaths.length > 0){
         const {error} = await supabase.storage
-        .from("car-images")
-        .remove(filePaths);
+          .from("car-images")
+          .remove(filePaths);
         if(error){
-          console.log("image delete failed", error);
+          console.error("Image delete failed", error);
         }
       }
-
     } catch (storageError) {
-      console.error("error with storage ", storageError)
+      console.error("Storage error", storageError);
     }
-    revalidatePath("/admin/cars")
-    return{
-      succes:true,
-    }
+
+    revalidatePath("/admin/cars");
+    return{ success:true };
 
   } catch (error) {
+    console.error("deleteCar error:", error.message); // ✅ log add kiya
     return{
       success:false,
       error:error.message,
@@ -271,7 +277,7 @@ export async function deleteCar(id){
 export async function updateCar(id, {status,featured}){
 try {
   const {userId} = await auth();
-  if(!useId) throw new Error("Unathorized")
+  if(!userId) throw new Error("Unathorized")
     const user = await prisma.user.findUnique({
   where:{clerkUserId:userId},
     });
