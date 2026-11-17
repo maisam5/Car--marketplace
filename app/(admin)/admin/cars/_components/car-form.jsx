@@ -188,7 +188,12 @@ const processWithAi = async () => {
   }
 };
 useEffect(() => {
-  if (!data?.success) return;
+  if (!data) return;
+
+  if (!data.success) {
+    toast.error(data.message || "Failed to extract car details");
+    return;
+  }
 
   const c = data.data;
 
@@ -198,13 +203,22 @@ useEffect(() => {
   setValue("color", c.color || "");
   setValue("bodyType", c.bodyType || "");
   setValue("fuelType", c.fuelType || "");
-  setValue("price", c.price || "");
-  setValue("mileage", c.mileage || "");
+  setValue("price", c.price?.toString() || "");
+  setValue("mileage", c.mileage?.toString() || "");
+  setValue("seats", c.seats?.toString() || "");
   setValue("transmission", c.transmission || "");
+  setValue("status", c.status || "AVAILABLE");
   setValue("description", c.description || "");
 
+  if (imagePreview) {
+    setUploadedImages((prev) =>
+      prev.includes(imagePreview) ? prev : [imagePreview, ...prev]
+    );
+  }
+
+  setActiveTab("manual");
   toast.success("Car detected with AI");
-}, [data, setValue]);
+}, [data, imagePreview, setValue]);
 
 useEffect(() => {
   if (!error) return;
@@ -334,8 +348,10 @@ useEffect(() => {
                   <div className="space-y-2">
                     <Label htmlFor="fuelType">fuelType</Label>
                     <Select
-                      onValueChange={(value) => setValue("fuelType", value)}
-                      defaultValue={getValues("fuelType")}
+                      value={watch("fuelType") || ""}
+                      onValueChange={(value) =>
+                        setValue("fuelType", value, { shouldValidate: true })
+                      }
                     >
                       <SelectTrigger
                         className={errors.fuelType ? "border-red-500" : ""}
@@ -395,8 +411,10 @@ useEffect(() => {
                   <div className="space-y-2">
                     <Label htmlFor="bodyType">Body Type</Label>
                     <Select
-                      onValueChange={(value) => setValue("bodyType", value)}
-                      defaultValue={getValues("bodyType")}
+                      value={watch("bodyType") || ""}
+                      onValueChange={(value) =>
+                        setValue("bodyType", value, { shouldValidate: true })
+                      }
                     >
                       <SelectTrigger
                         className={errors.bodyType ? "border-red-500" : ""}
@@ -436,8 +454,10 @@ useEffect(() => {
                   <div className="space-y-2">
                     <Label htmlFor="status">Status</Label>
                     <Select
-                      onValueChange={(value) => setValue("status", value)}
-                      defaultValue={getValues("status")}
+                      value={watch("status") || "AVAILABLE"}
+                      onValueChange={(value) =>
+                        setValue("status", value, { shouldValidate: true })
+                      }
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select status" />
@@ -475,8 +495,8 @@ useEffect(() => {
                 <div className="flex items-start space-x-3 space-y-0 rounded-md border p-4">
                   <Checkbox
                     id="featured"
-                    {...register("featured")}
-                    onCheckedChange={(val) => setValue("featured", val)}
+                    checked={Boolean(watch("featured"))}
+                    onCheckedChange={(val) => setValue("featured", Boolean(val))}
                   />
 
                   <div className="space-y-1 leading-none">
@@ -593,10 +613,11 @@ useEffect(() => {
                   />
                   <div className="gap-2 flex">
                     <Button
+                      type="button"
                       variant="outline"
                       onClick={() => {
                         setImagePreview(null);
-                        setUplaodAiImage("");
+                        setUplaodAiImage(null);
                         toast.info("image removed");
                       }}
                     >

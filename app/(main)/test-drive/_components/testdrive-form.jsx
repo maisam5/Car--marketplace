@@ -73,7 +73,7 @@ const TestDriveForm = ({ car, testDriveInfo }) => {
       (h) => h.dayOfWeek === dayOfWeek
     );
 
-    if (!workingHoursForDay || workingHoursForDay.isClosed) {
+    if (!workingHoursForDay || !workingHoursForDay.isOpen) {
       setAvailableTimeSlots([]);
       setValue("timeSlot", undefined);
       return;
@@ -134,7 +134,9 @@ const TestDriveForm = ({ car, testDriveInfo }) => {
         // setTimeout(() => router.push("/bookings"), 2000);
       } else {
         // 5. Server-side error handling
-        throw new Error(response?.error || "Booking failed. Please try again.");
+        throw new Error(
+          response?.error || response?.message || "Booking failed. Please try again."
+        );
       }
 
     } catch (error) {
@@ -277,7 +279,7 @@ const TestDriveForm = ({ car, testDriveInfo }) => {
                 className="w-full p-3 rounded-md border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                 onChange={(e) => {
                   const val = e.target.value;
-                  setValue("date", val ? new Date(val) : undefined, {
+                  setValue("date", val ? new Date(`${val}T00:00:00`) : undefined, {
                     shouldValidate: true,
                   });
                 }}

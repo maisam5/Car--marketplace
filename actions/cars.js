@@ -1,79 +1,114 @@
 "use server"
 import { carformSchema } from "@/lib/carSchema";
+import { deleteCarImages, uploadCarImage } from "@/lib/cloudinary";
 import { prisma } from "@/lib/client";
-import { getGemini } from "@/lib/gemini";
+import { generateWithGemini } from "@/lib/gemini";
 import { serializeCarData } from "@/lib/helper";
 import { extractJson } from "@/lib/safeParse";
-import { createClient } from "@/lib/supabase";
 import { auth } from "@clerk/nextjs/server";
 
 import { revalidatePath } from "next/cache";
-import { cookies } from "next/headers";
-import { useId } from "react";
-import {v4 as uuidv4} from "uuid"
+import { v4 as uuidv4 } from "uuid";
 
+const FUEL_TYPES = ["Petrol", "Diesel", "Electric", "Hybrid", "Plug-in Hybrid"];
+const TRANSMISSIONS = ["Automatic", "Manual", "Semi-Automatic"];
+const BODY_TYPES = [
+  "SUV",
+  "Sedan",
+  "Hatchback",
+  "Convertible",
+  "Coupe",
+  "Wagon",
+  "Pickup",
+];
 
-const TIMEOUT = 20000;
-
-export async function fileToBase64(file){
-const bytes = await file.arrayBuffer();
-const buffer = Buffer.from(bytes);
-return buffer.toString("base64")
+function matchOption(value, options, fallback) {
+  if (!value) return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  return (
+    options.find((opt) => opt.toLowerCase() === normalized) ||
+    options.find((opt) => normalized.includes(opt.toLowerCase())) ||
+    fallback
+  );
 }
+
+export async function fileToBase64(file) {
+  const bytes = await file.arrayBuffer();
+  const buffer = Buffer.from(bytes);
+  return buffer.toString("base64");
+}
+
 export async function extractCarWithAI({ base64, mimeType }) {
   try {
     if (!base64) throw new Error("Image missing");
 
-    const genAI = getGemini();
-
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
-    });
-
     const imagePart = {
       inlineData: {
         data: base64,
-        mimeType,
+        mimeType: mimeType || "image/jpeg",
       },
     };
 
     const prompt = `
-You are a car recognition AI.
-Return ONLY JSON.
+Analyze this car image and extract its details as a single JSON object.
+Return ONLY valid JSON, with no markdown or extra text.
+
+Use these exact allowed values where applicable:
+- bodyType: one of ${JSON.stringify(BODY_TYPES)}
+- fuelType: one of ${JSON.stringify(FUEL_TYPES)}
+- transmission: one of ${JSON.stringify(TRANSMISSIONS)}
 
 {
-  "make": "",
-  "model": "",
-  "year": number,
-  "color": "",
-  "bodyType": "",
-  "fuelType": "",
-  "transmission": "",
-  "mileage": number,
-  "price": number,
-  "description": "",
-  "confidence": number
+  "make": "manufacturer name (e.g. Toyota)",
+  "model": "model name (e.g. Corolla)",
+  "year": "4-digit estimated year as string (e.g. 2022)",
+  "color": "primary exterior color (e.g. White)",
+  "bodyType": "SUV",
+  "fuelType": "Petrol",
+  "transmission": "Automatic",
+  "seats": "estimated number of seats as string (e.g. 5)",
+  "mileage": "estimated mileage number as string (e.g. 15000)",
+  "price": "estimated USD price number as string (e.g. 25000)",
+  "description": "short 1-2 sentence description of the car shown in the image",
+  "confidence": 0.9
 }
 `;
 
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), 20000);
-
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: prompt }, imagePart],
-        },
-      ],
-    });
-
-    clearTimeout(id);
-
-    const text = result.response.text();
-
+    const text = await generateWithGemini([{ text: prompt }, imagePart]);
     const parsed = extractJson(text);
-    const validated = carformSchema.parse(parsed);
+
+    const currentYear = new Date().getFullYear();
+    const parsedYear = parseInt(parsed.year, 10);
+    const safeYear =
+      !isNaN(parsedYear) && parsedYear >= 1900 && parsedYear <= currentYear + 1
+        ? String(parsedYear)
+        : String(currentYear);
+
+    const make = String(parsed.make || "Unknown").trim() || "Unknown";
+    const model = String(parsed.model || "Unknown").trim() || "Unknown";
+    const rawDesc = String(parsed.description || "").trim();
+    const description =
+      rawDesc.length >= 10
+        ? rawDesc
+        : `${safeYear} ${make} ${model} in good condition.`;
+
+    const normalized = {
+      make,
+      model,
+      year: safeYear,
+      price: String(parsed.price ?? "0").replace(/[^0-9.]/g, "") || "0",
+      mileage: String(parsed.mileage ?? "0").replace(/[^0-9]/g, "") || "0",
+      color: String(parsed.color || "Unknown").trim() || "Unknown",
+      fuelType: matchOption(parsed.fuelType, FUEL_TYPES, "Petrol"),
+      transmission: matchOption(parsed.transmission, TRANSMISSIONS, "Automatic"),
+      bodyType: matchOption(parsed.bodyType, BODY_TYPES, "Sedan"),
+      seats: parsed.seats ? String(parsed.seats).replace(/[^0-9]/g, "") : "5",
+      description,
+      status: "AVAILABLE",
+      featured: false,
+    };
+
+    const validated = carformSchema.parse(normalized);
 
     return {
       success: true,
@@ -84,16 +119,18 @@ Return ONLY JSON.
 
     return {
       success: false,
-      message: err.message,
+      message: err.message || "Failed to extract car details",
     };
   }
 }
 
 
 export async function addCar({carData, images}){
+  const uploadedUrls = [];
+
   try {
      const {userId} = await auth();
-        if(!userId) throw new Error("Unathorized")
+        if(!userId) throw new Error("Unauthorized")
         const user = await prisma.user.findUnique({
           where:{
             clerkUserId:userId,
@@ -101,52 +138,25 @@ export async function addCar({carData, images}){
         });
         if(!user) throw new Error("user not found")
 
-          const carId = uuidv4()
-          const folderPath = `cars/${carId}`
+          const carId = uuidv4();
+          const folderPath = `carhub/cars/${carId}`;
 
-          const cookieStore = await cookies();
-          const supabase = createClient(cookieStore);
-
-          const imageUrls = [];
-
-          for(let i = 0; i < images.length; i++){
+          for (let i = 0; i < images.length; i++) {
             const base64Data = images[i];
-            if(!base64Data || !base64Data.startsWith("data:image/")){
-              console.warn("skiping invalid images");
+            if (!base64Data || !base64Data.startsWith("data:image/")) {
+              console.warn("skipping invalid image");
               continue;
             }
-            // extract base64 part
 
-            const base64 = base64Data.split(",")[1];
-            const imageBuffer = Buffer.from(base64, "base64");
-
-            // check file extension from data url
-
-            const mimeMatch = base64Data.match(/data:image\/([a-za-z0-9]+);/);
-            const fileExtention = mimeMatch ? mimeMatch[1]:"jpeg"
-
-            // create filename
-
-          const fileName = `image-${Date.now()}-${i}-${fileExtention}`;
-          const filePath = `${folderPath}/${fileName}`;
-
-       const {data, error} =    await supabase.storage.from("car-images").upload(filePath, imageBuffer,{
-            contentType:`image/${fileExtention}`,
-          });
-
-          if(error){
-            console.error("error uploading image:", error);
-            throw new Error(`image upload failed: ${error.message}`)
-          }
-          const publickUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/car-images/${filePath}`;
-          imageUrls.push(publickUrl);
+            const { url } = await uploadCarImage(base64Data, folderPath);
+            uploadedUrls.push(url);
           }
       
-      if(imageUrls.length === 0){
-        throw new Error("in valid image upload");;
+      if(uploadedUrls.length === 0){
+        throw new Error("Invalid image upload");
       }
 
-  const car = await prisma.car.create({
+  await prisma.car.create({
    data : {
   id: carId,
   make: carData.make,
@@ -162,7 +172,7 @@ export async function addCar({carData, images}){
   description: carData.description,
   status: carData.status,
   featured: carData.featured,
-  images: imageUrls, // Store the array of image URLs
+  images: uploadedUrls,
 },
    });
 
@@ -173,7 +183,13 @@ export async function addCar({carData, images}){
    };
 
   } catch (error) {
-    throw new Error("faild to add car:" + error.message)
+    // Rollback uploaded Cloudinary images if DB insert or later step fails
+    if (uploadedUrls.length > 0) {
+      await deleteCarImages(uploadedUrls).catch((cleanupErr) => {
+        console.error("Cloudinary rollback cleanup failed:", cleanupErr);
+      });
+    }
+    throw new Error("Failed to add car: " + error.message);
   }
 }
 
@@ -238,27 +254,11 @@ export async function deleteCar(id){
       where:{id},
     });
 
-    // ✅ Supabase images delete
+    // ✅ Delete images from Cloudinary
     try {
-      const cookieStore = await cookies();
-      const supabase = createClient(cookieStore);
-
-      const filePaths = car.images.map((imageUrl)=>{
-        const url = new URL(imageUrl);
-        const pathMatch = url.pathname.match(/\/car-images\/(.*)/);
-        return pathMatch ? pathMatch[1] : null;
-      }).filter(Boolean);
-
-      if(filePaths.length > 0){
-        const {error} = await supabase.storage
-          .from("car-images")
-          .remove(filePaths);
-        if(error){
-          console.error("Image delete failed", error);
-        }
-      }
+      await deleteCarImages(car.images);
     } catch (storageError) {
-      console.error("Storage error", storageError);
+      console.error("Cloudinary delete error:", storageError);
     }
 
     revalidatePath("/admin/cars");

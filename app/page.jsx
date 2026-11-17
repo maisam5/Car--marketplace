@@ -199,7 +199,7 @@ export default async function Home() {
           <h1 className="font bold text-xl text-center mb-8">
             Frequently asked questions
           </h1>
-          <Accordion suppressHydrationWarning type="single" collapsible defaultValue="item-1" 
+          <Accordion type="single" collapsible defaultValue="item-1" 
           className='w-full'
           >
            {faqItems.map((faq, index)=>{

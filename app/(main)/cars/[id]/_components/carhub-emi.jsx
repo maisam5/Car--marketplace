@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 
 const formatCurrency = (value) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
@@ -12,26 +12,26 @@ export default function EMICalculator({ initialPrice = 35000 }) {
   const [downPaymentPercent, setDownPaymentPercent] = useState(20);
   const [loanTerm, setLoanTerm] = useState(60);
   const [interestRate, setInterestRate] = useState(4.5);
-  const [emi, setEmi] = useState(0);
-  const [totalPayment, setTotalPayment] = useState(0);
-  const [totalInterest, setTotalInterest] = useState(0);
 
-  useEffect(() => {
+  const { emi, totalPayment, totalInterest } = useMemo(() => {
     const principal = carPrice - downPayment;
     const monthlyRate = interestRate / 100 / 12;
     if (monthlyRate === 0) {
       const m = principal / loanTerm;
-      setEmi(m);
-      setTotalPayment(m * loanTerm + downPayment);
-      setTotalInterest(0);
-    } else {
-      const m =
-        (principal * monthlyRate * Math.pow(1 + monthlyRate, loanTerm)) /
-        (Math.pow(1 + monthlyRate, loanTerm) - 1);
-      setEmi(m);
-      setTotalPayment(m * loanTerm + downPayment);
-      setTotalInterest(m * loanTerm - principal);
+      return {
+        emi: m,
+        totalPayment: m * loanTerm + downPayment,
+        totalInterest: 0,
+      };
     }
+    const m =
+      (principal * monthlyRate * Math.pow(1 + monthlyRate, loanTerm)) /
+      (Math.pow(1 + monthlyRate, loanTerm) - 1);
+    return {
+      emi: m,
+      totalPayment: m * loanTerm + downPayment,
+      totalInterest: m * loanTerm - principal,
+    };
   }, [carPrice, downPayment, loanTerm, interestRate]);
 
   const handleDownPaymentChange = (val) => {

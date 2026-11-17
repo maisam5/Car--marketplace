@@ -10,7 +10,7 @@ export async function generateMetadata({ params }) {
   const { id } = await params;
   const result = await getCarById(id);
 
-  if (!result.success) {
+  if (!result?.success) {
     return {
       title: "Car Not Found | CarHub",
       description: "The requested car  not found",
@@ -31,7 +31,7 @@ const CarPage = async ({params}) => {
     const {id} = await params;
     const result = await getCarById(id);
 
-    if(!result.success){
+    if (!result?.success) {
       notFound();
     }
     

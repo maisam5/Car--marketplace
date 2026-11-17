@@ -38,7 +38,7 @@ const TestDriveList = () => {
 
   useEffect(() => {
     fetchTestDrives({ search, status: statusFilter });
-  }, [search, statusFilter]);
+  }, [fetchTestDrives, search, statusFilter]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -60,7 +60,7 @@ const TestDriveList = () => {
       toast.success("Test drive cancelled successfully");
       fetchTestDrives({ search, status: statusFilter });
     }
-  }, [updateResult, cancelResult]);
+  }, [updateResult, cancelResult, fetchTestDrives, search, statusFilter]);
 
   useEffect(() => {
     if (testDrivesError) toast.error("Failed to load test drives");

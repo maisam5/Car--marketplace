@@ -40,34 +40,41 @@ const HomeSearch = () => {
 
   const handleImageSearch = async(e) => {
     e.preventDefault();
-    if(!searchImage){
+    if(!searchImage || !imagePreview){
       toast.error("please select an image")
       return;
     }
-    //add ai logic after this
-    await processImageFn(searchImage)
-    
+    const base64 = imagePreview.split(",")[1];
+    await processImageFn({
+      base64,
+      mimeType: searchImage.type || "image/jpeg",
+    });
   };
   useEffect(()=>{
     if(processError){
-      toast.error("failed to analyze image" + (processError.message || "unknown error")
+      toast.error("failed to analyze image: " + (processError || "unknown error")
     );
     }
   },[processError])
 
   useEffect(() => {
-  if (processResult?.success) {
-    const params = new URLSearchParams();
+  if (!processResult) return;
 
-    if (processResult.data.make) params.set("make", processResult.data.make);
-    if (processResult.data.bodyType)
-      params.set("bodyType", processResult.data.bodyType);
-    if (processResult.data.color)
-      params.set("color", processResult.data.color);
-
-     router.push(`/cars?${params.toString()}`);
+  if (!processResult.success) {
+    toast.error(processResult.error || "Failed to analyze image");
+    return;
   }
-}, [processResult,router]);
+
+  const params = new URLSearchParams();
+
+  if (processResult.data?.make) params.set("make", processResult.data.make);
+  if (processResult.data?.bodyType)
+    params.set("bodyType", processResult.data.bodyType);
+  if (processResult.data?.color)
+    params.set("color", processResult.data.color);
+
+  router.push(`/cars?${params.toString()}`);
+}, [processResult, router]);
 
   const onDrop = (acceptedFiles) => {
     const file = acceptedFiles[0];
@@ -145,6 +152,7 @@ const HomeSearch = () => {
                     className="object-contain mb-4"
                   />
                   <Button
+                    type="button"
                     variant="outline"
                     onClick={() => {
                       setSearchImage(null);

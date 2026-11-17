@@ -309,70 +309,111 @@ export async function getCarById(carId) {
     });
 
     if (!car) {
-      return null;
+      return {
+        success: false,
+        error: "Car not found",
+      };
     }
 
-  let isWishlisted = false;
+    let isWishlisted = false;
+    let userTestDrive = null;
+
     if (dbUser) {
-      const savedCar = await prisma.userSavedCar.findUnique({
-        where: {
-          userId_carId: {
-            userId: dbUser.id,
+      const [savedCar, existingTestDrive] = await Promise.all([
+        prisma.userSavedCar.findUnique({
+          where: {
+            userId_carId: {
+              userId: dbUser.id,
+              carId,
+            },
+          },
+        }),
+        prisma.testDriveBooking.findFirst({
+          where: {
             carId,
+            userId: dbUser.id,
+            status: { in: ["PENDING", "CONFIRMED", "COMPLETED"] },
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+        }),
+      ]);
+
+      isWishlisted = !!savedCar;
+
+      if (existingTestDrive) {
+        userTestDrive = {
+          id: existingTestDrive.id,
+          status: existingTestDrive.status,
+          bookingDate: existingTestDrive.bookingDate.toISOString(),
+        };
+      }
+    }
+
+    let dealership = await prisma.dealershipInfo.findFirst({
+      include: {
+        workingHours: true,
+      },
+    });
+
+    if (!dealership) {
+      dealership = await prisma.dealershipInfo.create({
+        data: {
+          workingHours: {
+            create: [
+              { dayOfWeek: "MONDAY", openTime: "09:00", closeTime: "18:00", isOpen: true },
+              { dayOfWeek: "TUESDAY", openTime: "09:00", closeTime: "18:00", isOpen: true },
+              { dayOfWeek: "WEDNESDAY", openTime: "09:00", closeTime: "18:00", isOpen: true },
+              { dayOfWeek: "THURSDAY", openTime: "09:00", closeTime: "18:00", isOpen: true },
+              { dayOfWeek: "FRIDAY", openTime: "09:00", closeTime: "18:00", isOpen: true },
+              { dayOfWeek: "SATURDAY", openTime: "10:00", closeTime: "16:00", isOpen: true },
+              { dayOfWeek: "SUNDAY", openTime: "00:00", closeTime: "00:00", isOpen: false },
+            ],
           },
         },
+        include: {
+          workingHours: true,
+        },
       });
-      isWishlisted = !!savedCar;
     }
 
-  const existingTestDrive = await prisma.testDriveBooking.findFirst({
-  where: {
-    carId,
-    userId: dbUser.id,
-    status: { in: ["PENDING", "CONFIRMED", "COMPLETED"] },
-  },
-  orderBy: {
-    createdAt: "desc",
-  },
-});
+    const existingBookings = await prisma.testDriveBooking.findMany({
+      where: {
+        carId,
+        status: { in: ["PENDING", "CONFIRMED"] },
+      },
+      select: {
+        bookingDate: true,
+        startTime: true,
+      },
+    });
 
-let userTestDrive = null;
-
-if (existingTestDrive) {
-  userTestDrive = {
-    id: existingTestDrive.id,
-    status: existingTestDrive.status,
-    bookingDate: existingTestDrive.bookingDate.toISOString(),
-  };
-}
-
-const dealership = await prisma.dealershipInfo.findFirst({
-  include: {
-    workingHours: true,
-  },
-});
-
-return {
-  success: true,
-  data: {
-    ...serializeCarData(car, isWishlisted),
-    testDriveInfo: {
-      userTestDrive,
-      dealership: dealership
-        ? {
-            ...dealership,
-            createdAt: dealership.createdAt.toISOString(),
-            updatedAt: dealership.updatedAt.toISOString(),
-            workingHours: dealership.workingHours.map((hour) => ({
-              ...hour,
-              createdAt: hour.createdAt.toISOString(),
-              updatedAt: hour.updatedAt.toISOString(),
-            })),
-          }
-        : null,
-    },
-  },
-};
+    return {
+      success: true,
+      data: {
+        ...serializeCarData(car, isWishlisted),
+        testDriveInfo: {
+          userTestDrive,
+          existingBookings: existingBookings.map((b) => ({
+            bookingDate: b.bookingDate.toISOString().split("T")[0],
+            startTime: b.startTime,
+          })),
+          dealership: dealership
+            ? {
+                ...dealership,
+                createdAt: dealership.createdAt.toISOString(),
+                updatedAt: dealership.updatedAt.toISOString(),
+                workingHours: dealership.workingHours.map((hour) => ({
+                  ...hour,
+                  createdAt: hour.createdAt.toISOString(),
+                  updatedAt: hour.updatedAt.toISOString(),
+                })),
+              }
+            : null,
+        },
+      },
+    };
    
   } catch (error) {
    throw new Error("error fetching car details" + error.message)

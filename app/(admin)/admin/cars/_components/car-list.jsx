@@ -44,56 +44,49 @@ const CarsList = () => {
 
  
   useEffect(() => {
-    fetchCars(search)
-  }, [search])
-
-  
-  useEffect(() => {
-    if (!deleteResult) return;
-
-    if (deleteResult.success) {
-      toast.success("Car deleted successfully");
-      fetchCars(search);
-      setDeleteDialogOpen(false);
-      setCarToDelete(null);
-    } else {
-      toast.error(deleteResult.error || "Delete failed");
-    }
-  }, [deleteResult])
-
-  // Update result handler
-  useEffect(() => {
-    if (updateResult?.success) {
-      toast.success("Car updated successfully");
-      fetchCars(search);
-    }
-  }, [updateResult])
+    fetchCars(search);
+  }, [fetchCars, search]);
 
   // Error handling
   useEffect(() => {
-    if (carsError) toast.error("Failed to load cars")
-    if (deleteError) toast.error("Failed to delete: " + deleteError)
-    if (updateError) toast.error("Failed to update: " + updateError.message)
-  }, [carsError, deleteError, updateError])
+    if (carsError) toast.error("Failed to load cars");
+    if (deleteError) toast.error("Failed to delete: " + deleteError);
+    if (updateError) toast.error("Failed to update: " + updateError);
+  }, [carsError, deleteError, updateError]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     fetchCars(search);
-  }
+  };
 
   const handleDeleteCar = async () => {
-    if (carToDelete) {
-      await deleteCarFn(carToDelete.id);
+    if (!carToDelete) return;
+    const res = await deleteCarFn(carToDelete.id);
+    if (res?.success) {
+      toast.success("Car deleted successfully");
+      fetchCars(search);
+      setDeleteDialogOpen(false);
+      setCarToDelete(null);
+    } else if (res) {
+      toast.error(res.error || "Delete failed");
     }
-  }
+  };
 
   const handleToggleFeatured = async (car) => {
-    await updateCarFn(car.id, { featured: !car.featured });
-  }
+    const res = await updateCarFn(car.id, { featured: !car.featured });
+    if (res?.success) {
+      toast.success("Car updated successfully");
+      fetchCars(search);
+    }
+  };
 
   const handleStatusUpdate = async (car, newStatus) => {
-    await updateCarFn(car.id, { status: newStatus });
-  }
+    const res = await updateCarFn(car.id, { status: newStatus });
+    if (res?.success) {
+      toast.success("Car updated successfully");
+      fetchCars(search);
+    }
+  };
 
   const getStatusBadge = (status) => {
     switch (status) {

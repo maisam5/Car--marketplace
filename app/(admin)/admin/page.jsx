@@ -2,6 +2,8 @@ import { getDashboardData } from '@/actions/admin'
 import React from 'react'
 import Dashboard from './_components/dashboard';
 
+export const dynamic = "force-dynamic";
+
 const AdminPage = async() => {
   const dashboardData = await getDashboardData();
 

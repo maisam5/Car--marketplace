@@ -22,8 +22,10 @@ const CarFilters = ({ filters }) => {
   const bodyType = searchParams.get("bodyType") || "";
   const fuelType = searchParams.get("fuelType") || "";
   const transmission = searchParams.get("transmission") || "";
-  const minPrice = searchParams.get("minPrice") || filters.priceRange.min;
-  const maxPrice = searchParams.get("maxPrice") || filters.priceRange.max;
+  const minPriceParam = searchParams.get("minPrice");
+  const maxPriceParam = searchParams.get("maxPrice");
+  const minPrice = minPriceParam !== null ? Number(minPriceParam) : filters.priceRange.min;
+  const maxPrice = maxPriceParam !== null ? Number(maxPriceParam) : filters.priceRange.max;
   const sortBy = searchParams.get("sortBy") || "newest";
 
   const activeFilterCount = [
@@ -31,21 +33,39 @@ const CarFilters = ({ filters }) => {
     bodyType,
     fuelType,
     transmission,
-    minPrice != filters.priceRange.min,
-    maxPrice != filters.priceRange.max,
+    minPrice !== filters.priceRange.min,
+    maxPrice !== filters.priceRange.max,
   ].filter(Boolean).length;
 
 
   const updateURL = (key, value) => {
     const params = new URLSearchParams(searchParams.toString());
 
-    if (!value || value === "") {
+    if (key === "priceRange" && Array.isArray(value)) {
+      const [newMin, newMax] = value;
+      if (newMin <= filters.priceRange.min) {
+        params.delete("minPrice");
+      } else {
+        params.set("minPrice", String(newMin));
+      }
+      if (newMax >= filters.priceRange.max) {
+        params.delete("maxPrice");
+      } else {
+        params.set("maxPrice", String(newMax));
+      }
+    } else if (!value || value === "") {
       params.delete(key);
     } else {
-      params.set(key, value);
+      params.set(key, String(value));
     }
 
-    router.push(`${pathname}?${params.toString()}`);
+    params.delete("page");
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}` : pathname);
+  };
+
+  const clearSingleFilter = (key) => {
+    updateURL(key, "");
   };
 
 
@@ -88,6 +108,7 @@ const CarFilters = ({ filters }) => {
                   priceRange: [minPrice, maxPrice],
                 }}
                 onFilterChange={updateURL}
+                onClearFilter={clearSingleFilter}
               />
             </div>
 
@@ -149,6 +170,7 @@ const CarFilters = ({ filters }) => {
                 priceRange: [minPrice, maxPrice],
               }}
               onFilterChange={updateURL}
+              onClearFilter={clearSingleFilter}
             />
           </div>
         </div>

@@ -67,6 +67,7 @@ const booking = await prisma.testDriveBooking.create({
 
 revalidatePath(`/test-drive/${carId}`)
 revalidatePath(`/cars/${carId}`)
+revalidatePath("/bookings")
 return {
     success:true,
     data:booking,
@@ -74,9 +75,10 @@ return {
 
   } catch (error) {
     console.error("Booking Error:", error.message);
-    return { 
-      success: false, 
-      message: error.message || "Failed to book test drive" 
+    return {
+      success: false,
+      error: error.message || "Failed to book test drive",
+      message: error.message || "Failed to book test drive",
     };
   }
 }

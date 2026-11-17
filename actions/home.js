@@ -3,8 +3,9 @@
 
 import aj from "@/lib/arcjet";
 import { prisma } from "@/lib/client";
-import { getGemini } from "@/lib/gemini";
+import { generateWithGemini } from "@/lib/gemini";
 import { serializeCarData } from "@/lib/helper";
+import { extractJson } from "@/lib/safeParse";
 import { request } from "@arcjet/next";
 
 
@@ -25,44 +26,50 @@ export async function getFeaturedCars(limit = 3) {
   }
 }
 
-export async function processImageSearch(file) {
+export async function processImageSearch(input) {
   try {
-    // Rate Limiting with Arcjet
-    const req = await request();
+    // Rate Limiting with Arcjet (only when ARCJET_KEY is configured)
+    if (process.env.ARCJET_KEY) {
+      const req = await request();
+      const decision = await aj.protect(req, {
+        requested: 1,
+      });
 
-    const decision = await aj.protect(req, {
-      requested: 1,
-    });
+      if (decision.isDenied()) {
+        if (decision.reason.isRateLimit()) {
+          const { remaining, reset } = decision.reason;
 
-    if (decision.isDenied()) {
-      if (decision.reason.isRateLimit()) {
-        const { remaining, reset } = decision.reason;
+          return {
+            success: false,
+            error: "Rate limit exceeded",
+            remaining,
+            reset,
+          };
+        }
 
         return {
           success: false,
-          error: "Rate limit exceeded",
-          remaining,
-          reset,
+          error: "Request denied",
         };
       }
-
-      return {
-        success: false,
-        error: "Request denied",
-      };
     }
 
-    // File ko Base64 mein convert karo
-    const arrayBuffer = await file.arrayBuffer();
-    const base64 = Buffer.from(arrayBuffer).toString("base64");
-    const mimeType = file.type;
+    let base64;
+    let mimeType;
 
-    // Gemini AI Setup
-    const genAI = getGemini();
-
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
-    });
+    if (input && typeof input.arrayBuffer === "function") {
+      const arrayBuffer = await input.arrayBuffer();
+      base64 = Buffer.from(arrayBuffer).toString("base64");
+      mimeType = input.type || "image/jpeg";
+    } else if (input?.base64) {
+      base64 = input.base64;
+      mimeType = input.mimeType || "image/jpeg";
+    } else {
+      return {
+        success: false,
+        error: "Invalid image input",
+      };
+    }
 
     const imagePart = {
       inlineData: {
@@ -74,7 +81,7 @@ export async function processImageSearch(file) {
     const prompt = `
 Analyze this car image and extract the following information for a search query:
   1. Make (manufacturer)
-  2. Body type (SUV, Sedan, Hatchback, etc.)
+  2. Body type (SUV, Sedan, Hatchback, Convertible, Coupe, Wagon, Pickup)
   3. Color
 
   Format your response as a clean JSON object with these fields:
@@ -89,18 +96,15 @@ Analyze this car image and extract the following information for a search query:
   Only respond with the JSON object, nothing else.
 `;
 
-    const result = await model.generateContent([imagePart, prompt]);
-    const response = await result.response;
-    const text = response.text();
-    const cleanedText = text.replace(/```(?:json)?\n?/g, "").trim();
+    const text = await generateWithGemini([imagePart, { text: prompt }]);
 
     try {
-      const carDetails = JSON.parse(cleanedText);
+      const carDetails = extractJson(text);
       return {
         success: true,
         data: carDetails,
       };
-    } catch (parseError) {                 
+    } catch (parseError) {
       console.error("Failed to parse AI response", parseError);
       return {
         success: false,
@@ -109,8 +113,8 @@ Analyze this car image and extract the following information for a search query:
     }
 
   } catch (error) {
-    console.error("AI Search Error:", error); 
-    return {                                            
+    console.error("AI Search Error:", error);
+    return {
       success: false,
       error: "AI search error: " + error.message,
     };
